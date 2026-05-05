@@ -4,14 +4,17 @@ const TelegramBot = require("node-telegram-bot-api");
 const User = require("./models/User");
 const Payment = require("./models/Payment");
 const adminController = require("./controllers/adminController");
-const { mainMenu, adminMenu } = require("./utils/keyboards");
+
+const {
+  countryKeyboard,
+  currencyKeyboard,
+  languageKeyboard,
+  mainMenu
+} = require("./utils/keyboards");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 const ADMIN_ID = Number(process.env.ADMIN_ID);
-
-// In-memory state (for steps)
-let state = {};
 
 /* =========================
    START COMMAND
@@ -22,32 +25,21 @@ bot.onText(/\/start/, async (msg) => {
   let user = await User.findOne({ telegramId: id });
   if (!user) user = await User.create({ telegramId: id });
 
-  // If not registered → start registration
   if (!user.registrationComplete) {
-    state[id] = { step: 1 };
+    user.step = 1;
+    await user.save();
 
     return bot.sendMessage(
       id,
       "👋 Welcome to Sure 2 Odds\n\n" +
-      "Your trusted platform for daily winning booking codes.\n\n" +
-      "🎯 What you get:\n" +
-      "- Free daily Basic Codes\n" +
-      "- Premium VIP Codes with higher accuracy\n\n" +
-      "💎 VIP Benefits:\n" +
-      "- Exclusive high-odds selections\n" +
-      "- Consistent winning opportunities\n" +
-      "- Daily premium booking codes\n\n" +
-      "🚀 Complete your registration to get started.\n\n" +
       "Enter Full Name:"
     );
   }
 
-  // Admin panel
   if (id === ADMIN_ID) {
-    return bot.sendMessage(id, "👑 Admin Panel", adminMenu);
+    return bot.sendMessage(id, "👑 Admin Panel");
   }
 
-  // Normal user
   return bot.sendMessage(id, "Welcome back!", mainMenu);
 });
 
@@ -55,7 +47,6 @@ bot.onText(/\/start/, async (msg) => {
    MESSAGE HANDLER
 ========================= */
 bot.on("message", async (msg) => {
-  // 🚫 Prevent duplicate handling of commands
   if (msg.text && msg.text.startsWith("/")) return;
 
   const id = msg.chat.id;
@@ -65,70 +56,109 @@ bot.on("message", async (msg) => {
   let user = await User.findOne({ telegramId: id });
   if (!user) return;
 
-  // 🚫 Block banned users
   if (user.isBanned) {
     return bot.sendMessage(id, "❌ You are banned.");
   }
 
   /* =========================
+     BACK BUTTON
+  ========================= */
+  if (text === "⬅️ Back") {
+    if (user.step > 1) {
+      user.step -= 1;
+      await user.save();
+    }
+  }
+
+  /* =========================
      REGISTRATION FLOW
   ========================= */
-  if (state[id]?.step) {
 
-    if (state[id].step === 1) {
-      user.fullName = text;
-      await user.save();
-
-      state[id].step = 2;
-      return bot.sendMessage(id, "Enter Country:");
+  // STEP 1 → NAME
+  if (user.step === 1) {
+    if (!text || text === "⬅️ Back") {
+      return bot.sendMessage(id, "Enter Full Name:");
     }
 
-    if (state[id].step === 2) {
+    user.fullName = text;
+    user.step = 2;
+    await user.save();
+
+    return bot.sendMessage(id, "Select Country:", countryKeyboard);
+  }
+
+  // STEP 2 → COUNTRY
+  if (user.step === 2) {
+
+    if (text === "🌍 Auto Detect") {
+      const lang = msg.from.language_code;
+
+      if (lang === "en") user.country = "Nigeria";
+      else user.country = "Nigeria"; // fallback
+    } 
+    else if (text !== "⬅️ Back") {
       user.country = text;
-      await user.save();
-
-      state[id].step = 3;
-      return bot.sendMessage(id, "Enter Currency:");
     }
 
-    if (state[id].step === 3) {
+    user.step = 3;
+    await user.save();
+
+    return bot.sendMessage(id, "Select Currency:", currencyKeyboard);
+  }
+
+  // STEP 3 → CURRENCY
+  if (user.step === 3) {
+    if (text !== "⬅️ Back") {
       user.currency = text;
-      await user.save();
-
-      state[id].step = 4;
-      return bot.sendMessage(id, "Enter Language:");
     }
 
-    if (state[id].step === 4) {
+    user.step = 4;
+    await user.save();
+
+    return bot.sendMessage(id, "Select Language:", languageKeyboard);
+  }
+
+  // STEP 4 → LANGUAGE
+  if (user.step === 4) {
+    if (text !== "⬅️ Back") {
       user.language = text;
-      user.registrationComplete = true;
-      await user.save();
-
-      delete state[id];
-
-      return bot.sendMessage(id, "✅ Registration Complete!", mainMenu);
     }
+
+    user.step = 0;
+    user.registrationComplete = true;
+    await user.save();
+
+    return bot.sendMessage(
+      id,
+      "✅ Registration Complete!",
+      mainMenu
+    );
   }
 
   /* =========================
      SUPPORT SYSTEM
   ========================= */
   if (text === "📩 Support") {
-    state[id] = { support: true };
+    user.step = 99;
+    await user.save();
+
     return bot.sendMessage(id, "Send your message or image:");
   }
 
-  if (state[id]?.support) {
+  if (user.step === 99) {
     const file = photo ? photo[photo.length - 1].file_id : null;
 
-    // Send to admin
-    bot.sendMessage(ADMIN_ID, `📩 Support from ${user.fullName}`, {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Reply", callback_data: `reply_${id}` }]
-        ]
+    bot.sendMessage(
+      ADMIN_ID,
+      `📩 Support from ${user.fullName}\nID: ${user.telegramId}`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Reply", callback_data: `reply_${id}` }]
+          ]
+        }
       }
-    });
+    );
 
     if (file) {
       bot.sendPhoto(ADMIN_ID, file);
@@ -136,46 +166,52 @@ bot.on("message", async (msg) => {
       bot.sendMessage(ADMIN_ID, text);
     }
 
-    delete state[id];
+    user.step = 0;
+    await user.save();
 
     return bot.sendMessage(id, "✅ Message sent to admin.");
   }
 
   /* =========================
-     ADMIN PANEL ACTIONS
+     ADMIN ADD CODE
   ========================= */
-  if (id === ADMIN_ID) {
+  if (id === ADMIN_ID && text === "➕ Add Basic Code") {
+    user.step = 50;
+    user.tempType = "basic";
+    await user.save();
 
-    if (text === "➕ Add Basic Code") {
-      state[id] = { addCode: true, type: "basic" };
-      return bot.sendMessage(id, "Send code text or image:");
-    }
+    return bot.sendMessage(id, "Send code text or image:");
+  }
 
-    if (text === "💎 Add VIP Code") {
-      state[id] = { addCode: true, type: "vip" };
-      return bot.sendMessage(id, "Send VIP code:");
-    }
+  if (id === ADMIN_ID && text === "💎 Add VIP Code") {
+    user.step = 50;
+    user.tempType = "vip";
+    await user.save();
 
-    if (state[id]?.addCode) {
-      const file = photo ? photo[photo.length - 1].file_id : null;
+    return bot.sendMessage(id, "Send VIP code:");
+  }
 
-      await adminController.addCode(
-        state[id].type,
-        text || "📷 Image Code",
-        file
-      );
+  if (id === ADMIN_ID && user.step === 50) {
+    const file = photo ? photo[photo.length - 1].file_id : null;
 
-      delete state[id];
+    await adminController.addCode(
+      user.tempType,
+      text || "📷 Image Code",
+      file
+    );
 
-      return bot.sendMessage(id, "✅ Code added successfully.");
-    }
+    user.step = 0;
+    await user.save();
+
+    return bot.sendMessage(id, "✅ Code added.");
   }
 
   /* =========================
      VIP MANUAL PAYMENT
   ========================= */
   if (text === "💎 VIP") {
-    state[id] = { payment: true };
+    user.step = 60;
+    await user.save();
 
     return bot.sendMessage(
       id,
@@ -183,11 +219,11 @@ bot.on("message", async (msg) => {
       "Bank: MoMo PSB\n" +
       "Number: 7049625916\n" +
       "Name: Godwin Owoicho Oloja\n\n" +
-      "📸 Send payment receipt after transfer."
+      "📸 Send receipt after payment."
     );
   }
 
-  if (state[id]?.payment && photo) {
+  if (user.step === 60 && photo) {
     const file = photo[photo.length - 1].file_id;
 
     const payment = await Payment.create({
@@ -209,7 +245,8 @@ bot.on("message", async (msg) => {
       }
     });
 
-    delete state[id];
+    user.step = 0;
+    await user.save();
 
     return bot.sendMessage(id, "✅ Receipt submitted. Await approval.");
   }
@@ -221,23 +258,18 @@ bot.on("message", async (msg) => {
 bot.on("callback_query", async (query) => {
   const data = query.data;
 
-  // Approve payment
   if (data.startsWith("approve_")) {
     const id = data.split("_")[1];
     const payment = await Payment.findById(id);
-
     await adminController.approveManual(payment, bot);
   }
 
-  // Reject payment
   if (data.startsWith("reject_")) {
     const id = data.split("_")[1];
     const payment = await Payment.findById(id);
-
     await adminController.rejectManual(payment, bot);
   }
 
-  // Reply to user
   if (data.startsWith("reply_")) {
     const userId = data.split("_")[1];
 
