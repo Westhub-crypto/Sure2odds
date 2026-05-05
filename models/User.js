@@ -5,7 +5,10 @@ const schema = new mongoose.Schema({
   fullName: String,
   country: String,
   currency: String,
-  language: { type: String, default: "en" },
+  language: String,
+
+  step: { type: Number, default: 0 }, // ✅ step tracking
+
   isVIP: { type: Boolean, default: false },
   isBanned: { type: Boolean, default: false },
   registrationComplete: { type: Boolean, default: false }
