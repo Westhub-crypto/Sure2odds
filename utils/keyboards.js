@@ -23,10 +23,18 @@ const getAdminMenu = () => {
 
 const getRegistrationMenu = (step) => {
     let keyboard = [];
+    
+    // Telegram will crash if we send an empty keyboard []. 
+    // If it's the start/name step, we simply remove the keyboard so they can type.
+    if (step === 'start' || step === 'name') {
+        return { reply_markup: { remove_keyboard: true } };
+    }
+
     if (step === 'country') keyboard = [[{ text: '🌍 Auto Detect Country' }]];
     if (step === 'currency') keyboard = [[{ text: 'USD' }, { text: 'NGN' }, { text: 'EUR' }, { text: 'GHS' }]];
     if (step === 'language') keyboard = [[{ text: 'English' }, { text: 'French' }]];
-    if (step !== 'start') keyboard.push([{ text: '⬅️ Back' }]);
+    
+    keyboard.push([{ text: '⬅️ Back' }]);
     
     return { reply_markup: { keyboard, resize_keyboard: true, one_time_keyboard: true } };
 };
