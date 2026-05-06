@@ -3,7 +3,7 @@ const User = require('./models/User');
 const Payment = require('./models/Payment');
 const Code = require('./models/Code');
 const Subscription = require('./models/Subscription');
-const { getMainMenu, getRegistrationMenu, getAdminMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu } = require('./utils/keyboards');
+const { getMainMenu, getRegistrationMenu, getAdminMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu, getSupportMenu } = require('./utils/keyboards');
 const { checkAdmin } = require('./middlewares/adminMiddleware');
 const { handleAdminPanel, handleStats } = require('./controllers/adminController');
 const { processManualReceipt, handleAdminPaymentAction } = require('./controllers/paymentController');
@@ -34,7 +34,7 @@ bot.on('message', async (msg) => {
         const isAdmin = checkAdmin(chatId);
         let user = await User.findOne({ telegramId: chatId });
 
-        // Global Cancel & Return Logic
+        // 🔥 GLOBAL CANCEL: Instantly catches "Cancel" from ANY menu and brings them home
         if (text === '⬅️ Return to Main Menu' || text === '❌ Cancel') {
             if (user) {
                 user.step = 'registered';
@@ -44,6 +44,7 @@ bot.on('message', async (msg) => {
         }
 
         if (text === '/start') {
+            // 🔥 START FIX: If user is fully registered, welcome them back! Do not restart.
             if (user && user.step === 'registered') {
                 const welcomeBack = `🌟 <b>Welcome back to Sure 2 Odds, ${user.fullName}!</b> 🌟\n\nUse the menu below to access your premium codes and profile.`;
                 return bot.sendMessage(chatId, welcomeBack, { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
@@ -65,6 +66,11 @@ bot.on('message', async (msg) => {
             if (text === '📊 Statistics') return handleStats(bot, chatId, User, Subscription);
         }
 
+        // 🔥 STRICT VALIDATION LISTS
+        const validCountries = ['🇳🇬 Nigeria', '🇬🇭 Ghana', '🇨🇮 Ivory Coast', '🇸🇳 Senegal', '🇨🇲 Cameroon', '🇧🇯 Benin'];
+        const validCurrencies = ['USD', 'NGN', 'EUR', 'GHS'];
+        const validLanguages = ['English', 'French'];
+
         // Registration Flow
         if (user.step !== 'registered' && user.step !== 'awaiting_receipt' && user.step !== 'support' && user.step !== 'vip_payment_selection' && user.step !== 'awaiting_auto_verify') {
             
@@ -83,20 +89,38 @@ bot.on('message', async (msg) => {
                 }
             }
 
-            if (user.step === 'name' && text !== '/start') {
-                user.fullName = text; user.step = 'country'; await user.save();
+            // 🔥 ANTI-RACE CONDITION LOGIC
+            if (user.step === 'name') {
+                user.fullName = text; 
+                user.step = 'country'; 
+                await user.save();
                 return bot.sendMessage(chatId, "🌍 <b>Country Selection</b>\n\nPlease select your country from the West African regions below:", { parse_mode: 'HTML', ...getRegistrationMenu('country') });
             }
-            else if (user.step === 'country' && text !== '⬅️ Back') {
-                user.country = text; user.step = 'currency'; await user.save();
+            else if (user.step === 'country') {
+                if (!validCountries.includes(text)) {
+                    return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid country.", { parse_mode: 'HTML', ...getRegistrationMenu('country') });
+                }
+                user.country = text; 
+                user.step = 'currency'; 
+                await user.save();
                 return bot.sendMessage(chatId, "💵 <b>Currency Selection</b>\n\nPlease select your preferred currency for transactions:", { parse_mode: 'HTML', ...getRegistrationMenu('currency') });
             }
-            else if (user.step === 'currency' && text !== '⬅️ Back') {
-                user.currency = text; user.step = 'language'; await user.save();
+            else if (user.step === 'currency') {
+                if (!validCurrencies.includes(text)) {
+                    return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid currency.", { parse_mode: 'HTML', ...getRegistrationMenu('currency') });
+                }
+                user.currency = text; 
+                user.step = 'language'; 
+                await user.save();
                 return bot.sendMessage(chatId, "🗣️ <b>Language Selection</b>\n\nPlease select your preferred language:", { parse_mode: 'HTML', ...getRegistrationMenu('language') });
             }
-            else if (user.step === 'language' && text !== '⬅️ Back') {
-                user.language = text; user.step = 'registered'; await user.save();
+            else if (user.step === 'language') {
+                if (!validLanguages.includes(text)) {
+                    return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid language.", { parse_mode: 'HTML', ...getRegistrationMenu('language') });
+                }
+                user.language = text; 
+                user.step = 'registered'; 
+                await user.save();
                 return bot.sendMessage(chatId, "✅ <b>Registration Complete!</b>\n\nYour profile has been successfully set up. Welcome to the Sure 2 Odds community!", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
             }
             return; 
@@ -151,7 +175,7 @@ bot.on('message', async (msg) => {
             }
 
             if (text === 'SUPPORT') {
-                bot.sendMessage(chatId, "📩 <b>Customer Support</b>\n\nPlease type your message and send it. Our administrative team will review your inquiry and get back to you shortly.", { parse_mode: 'HTML' });
+                bot.sendMessage(chatId, "📩 <b>Customer Support</b>\n\nPlease type your message and send it. Our administrative team will review your inquiry and get back to you shortly.", { parse_mode: 'HTML', ...getSupportMenu() });
                 user.step = 'support';
                 await user.save();
                 return;
@@ -188,7 +212,6 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // --- AUTO PAYMENT VERIFICATION ---
         if (user.step === 'awaiting_auto_verify' && text === '🔄 Verify Payment') {
             bot.sendMessage(chatId, "🔄 <b>Checking transaction status with Squadco... Please wait.</b>", { parse_mode: 'HTML' });
             
@@ -220,14 +243,17 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // Awaiting Data Handlers
-        if (user.step === 'awaiting_receipt' && msg.photo) {
-            await processManualReceipt(bot, chatId, ADMIN_ID, msg.photo[msg.photo.length - 1].file_id);
-        } else if (user.step === 'support') {
+        // Support Submissions
+        if (user.step === 'support') {
             await handleSupportMessage(bot, chatId, ADMIN_ID, text, msg.message_id);
             user.step = 'registered';
             await user.save();
-            return bot.sendMessage(chatId, "Returning to Main Menu.", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+            return bot.sendMessage(chatId, "✅ <b>Message Sent!</b>\n\nOur administrative team will review your inquiry and get back to you shortly. Returning to Main Menu.", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+        }
+
+        // Receipt Submissions
+        if (user.step === 'awaiting_receipt' && msg.photo) {
+            await processManualReceipt(bot, chatId, ADMIN_ID, msg.photo[msg.photo.length - 1].file_id);
         }
 
     } catch (error) {
@@ -235,7 +261,7 @@ bot.on('message', async (msg) => {
     }
 });
 
-// Admin Inline Button Handlers (Only admins use inline buttons for fast approvals)
+// Admin Inline Button Handlers
 bot.on('callback_query', async (query) => {
     try {
         const chatId = query.message.chat.id.toString();
@@ -246,6 +272,7 @@ bot.on('callback_query', async (query) => {
             if (data.startsWith('approve_') || data.startsWith('reject_')) {
                 const action = data.startsWith('approve_') ? 'approve' : 'reject';
                 const paymentId = data.replace(`${action}_`, '');
+                const { handleAdminPaymentAction } = require('./controllers/paymentController');
                 await handleAdminPaymentAction(bot, paymentId, action, chatId);
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId });
             }
