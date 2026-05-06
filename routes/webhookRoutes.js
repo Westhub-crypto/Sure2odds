@@ -1,34 +1,33 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const Payment = require("../models/Payment");
-const User = require("../models/User");
-const Subscription = require("../models/Subscription");
+const User = require('../models/User');
+const Subscription = require('../models/Subscription');
+const { calculateExpiryDate } = require('../utils/helpers');
+const { verifyPayment } = require('../services/squadService');
 
-router.post("/webhook", async (req, res) => {
-  const data = req.body;
-
-  if (data.event === "charge.success") {
-    const payment = await Payment.findOne({ reference: data.data.reference });
-    if (!payment) return res.sendStatus(200);
-
-    payment.status = "success";
-    await payment.save();
-
-    const user = await User.findById(payment.userId);
-    user.isVIP = true;
-    await user.save();
-
-    const now = new Date();
-    const expiry = new Date(now.getTime() + 30 * 86400000);
-
-    await Subscription.create({
-      userId: user._id,
-      startDate: now,
-      expiryDate: expiry
-    });
-  }
-
-  res.sendStatus(200);
+router.post('/squadco', async (req, res) => {
+    const event = req.body;
+    
+    if (event.Event === 'charge.completed' && event.Body.status === 'success') {
+        const telegramId = event.Body.meta.telegramId;
+        const reference = event.Body.transaction_ref;
+        
+        const isValid = await verifyPayment(reference);
+        if (isValid) {
+            const user = await User.findOne({ telegramId });
+            if (user) {
+                user.role = 'vip';
+                await user.save();
+                
+                await Subscription.findOneAndUpdate(
+                    { telegramId },
+                    { userId: user._id, status: 'active', startDate: new Date(), expiryDate: calculateExpiryDate(30) },
+                    { upsert: true }
+                );
+            }
+        }
+    }
+    res.status(200).send('OK');
 });
 
 module.exports = router;
