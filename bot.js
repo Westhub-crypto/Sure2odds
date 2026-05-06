@@ -10,20 +10,28 @@ const { processManualReceipt, handleAdminPaymentAction, handleSquadcoVerificatio
 const { handleSupportMessage } = require('./controllers/supportController');
 const { initializePayment } = require('./services/squadService');
 
+// Initialize Bot
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const ADMIN_ID = process.env.ADMIN_ID;
 
+console.log("🤖 Bot is starting up... verifying connection...");
+
 // 🔥 ANTI-GHOST WEBHOOK: Forces Telegram to send messages here
 bot.deleteWebHook().then(() => {
-    console.log('✅ Ghost webhooks cleared. Bot is actively listening for messages!');
-}).catch(err => console.error('Webhook Clear Error:', err));
+    console.log('✅ Ghost webhooks cleared. Bot is strictly using polling now!');
+}).catch(err => console.error('⚠️ Webhook Clear Error:', err.message));
+
+// 🔥 POLLING TRACKER: Catches hidden token/connection errors
+bot.on('polling_error', (error) => {
+    console.error("❌ POLLING ERROR:", error.code, error.message);
+});
 
 bot.on('message', async (msg) => {
     try {
         const chatId = msg.chat.id.toString();
         const text = msg.text || '';
         
-        // 🔥 TRACKER: This will print inside your Render Logs so we know it arrived
+        // 🔥 MESSAGE TRACKER: This will print inside your Render Logs so we know it arrived
         console.log(`📩 Message received from ${chatId}: ${text}`);
         
         const isAdmin = checkAdmin(chatId);
@@ -34,7 +42,10 @@ bot.on('message', async (msg) => {
                 user = new User({ telegramId: chatId });
             }
             user.step = 'name';
+            
+            console.log("💾 Attempting to save user to MongoDB...");
             await user.save(); // If MongoDB is blocking Render's IP, it will error out here safely
+            console.log("✅ User saved successfully!");
 
             // 🔥 CRASH-PROOF HTML: Switched from Markdown to HTML to prevent silent Telegram API crashes
             const welcome = `🌟 <b>Welcome to Sure 2 Odds</b> 🌟\n\nYour premier destination for expertly analyzed, high-accuracy booking codes.\n\nWhether you are looking to build consistency with our reliable <b>Free Daily Codes</b>, or maximize your profits with our exclusive <b>Premium VIP Selections</b>, you are in exactly the right place.\n\nTo ensure you get the best experience, let's set up your profile.\n\n📝 <b>Account Registration</b>\nPlease type and send your <b>Full Name</b> below to begin:`;
@@ -153,7 +164,6 @@ bot.on('message', async (msg) => {
     }
 });
 
-// Inline Button Handlers for Payments
 bot.on('callback_query', async (query) => {
     try {
         const chatId = query.message.chat.id.toString();
