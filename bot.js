@@ -10,18 +10,15 @@ const { processManualReceipt, handleAdminPaymentAction, handleSquadcoVerificatio
 const { handleSupportMessage } = require('./controllers/supportController');
 const { initializePayment } = require('./services/squadService');
 
-// Initialize Bot
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const ADMIN_ID = process.env.ADMIN_ID;
 
 console.log("🤖 Bot is starting up... verifying connection...");
 
-// 🔥 ANTI-GHOST WEBHOOK: Forces Telegram to send messages here
 bot.deleteWebHook().then(() => {
     console.log('✅ Ghost webhooks cleared. Bot is strictly using polling now!');
 }).catch(err => console.error('⚠️ Webhook Clear Error:', err.message));
 
-// 🔥 POLLING TRACKER: Catches hidden token/connection errors
 bot.on('polling_error', (error) => {
     console.error("❌ POLLING ERROR:", error.code, error.message);
 });
@@ -31,23 +28,24 @@ bot.on('message', async (msg) => {
         const chatId = msg.chat.id.toString();
         const text = msg.text || '';
         
-        // 🔥 MESSAGE TRACKER: This will print inside your Render Logs so we know it arrived
         console.log(`📩 Message received from ${chatId}: ${text}`);
         
         const isAdmin = checkAdmin(chatId);
         let user = await User.findOne({ telegramId: chatId });
 
         if (text === '/start') {
+            // Fix 1: If user is already registered, welcome them back! Do not reset them.
+            if (user && user.step === 'registered') {
+                const welcomeBack = `🌟 <b>Welcome back to Sure 2 Odds, ${user.fullName}!</b> 🌟\n\nUse the menu below to access your premium codes and profile.`;
+                return bot.sendMessage(chatId, welcomeBack, { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+            }
+
             if (!user) {
                 user = new User({ telegramId: chatId });
             }
             user.step = 'name';
-            
-            console.log("💾 Attempting to save user to MongoDB...");
-            await user.save(); // If MongoDB is blocking Render's IP, it will error out here safely
-            console.log("✅ User saved successfully!");
+            await user.save();
 
-            // 🔥 CRASH-PROOF HTML: Switched from Markdown to HTML to prevent silent Telegram API crashes
             const welcome = `🌟 <b>Welcome to Sure 2 Odds</b> 🌟\n\nYour premier destination for expertly analyzed, high-accuracy booking codes.\n\nWhether you are looking to build consistency with our reliable <b>Free Daily Codes</b>, or maximize your profits with our exclusive <b>Premium VIP Selections</b>, you are in exactly the right place.\n\nTo ensure you get the best experience, let's set up your profile.\n\n📝 <b>Account Registration</b>\nPlease type and send your <b>Full Name</b> below to begin:`;
             
             return await bot.sendMessage(chatId, welcome, { parse_mode: 'HTML', ...getRegistrationMenu('start') });
@@ -62,27 +60,49 @@ bot.on('message', async (msg) => {
             if (text === '⬅️ Back to Main Menu') return bot.sendMessage(chatId, "Main Menu", getMainMenu(isAdmin));
         }
 
-        // Registration Flow
+        // Fix 2: Professional Registration Flow Guides
         if (user.step !== 'registered' && user.step !== 'awaiting_receipt' && user.step !== 'support') {
+            
             if (text === '⬅️ Back') {
-                if (user.step === 'country') user.step = 'name';
-                else if (user.step === 'currency') user.step = 'country';
-                else if (user.step === 'language') user.step = 'currency';
-                await user.save();
-                return bot.sendMessage(chatId, `Enter data:`, getRegistrationMenu(user.step));
+                if (user.step === 'country') { 
+                    user.step = 'name'; await user.save(); 
+                    return bot.sendMessage(chatId, "📝 Please type and send your <b>Full Name</b>:", { parse_mode: 'HTML', ...getRegistrationMenu('start') }); 
+                }
+                if (user.step === 'currency') { 
+                    user.step = 'country'; await user.save(); 
+                    return bot.sendMessage(chatId, "🌍 <b>Country Selection</b>\nPlease select your country from the list below:", { parse_mode: 'HTML', ...getRegistrationMenu('country') }); 
+                }
+                if (user.step === 'language') { 
+                    user.step = 'currency'; await user.save(); 
+                    return bot.sendMessage(chatId, "💵 <b>Currency Selection</b>\nPlease select your preferred currency:", { parse_mode: 'HTML', ...getRegistrationMenu('currency') }); 
+                }
             }
 
-            switch (user.step) {
-                case 'name': user.fullName = text; user.step = 'country'; break;
-                case 'country': user.country = text; user.step = 'currency'; break;
-                case 'currency': user.currency = text; user.step = 'language'; break;
-                case 'language':
-                    user.language = text; user.step = 'registered';
-                    await user.save();
-                    return bot.sendMessage(chatId, "✅ Registration Complete!", getMainMenu(isAdmin));
+            if (user.step === 'name' && text !== '/start') {
+                user.fullName = text;
+                user.step = 'country';
+                await user.save();
+                return bot.sendMessage(chatId, "🌍 <b>Country Selection</b>\n\nPlease select your country from the West African regions below:", { parse_mode: 'HTML', ...getRegistrationMenu('country') });
             }
-            await user.save();
-            return bot.sendMessage(chatId, "Next:", getRegistrationMenu(user.step));
+            else if (user.step === 'country' && text !== '⬅️ Back') {
+                user.country = text;
+                user.step = 'currency';
+                await user.save();
+                return bot.sendMessage(chatId, "💵 <b>Currency Selection</b>\n\nPlease select your preferred currency for transactions:", { parse_mode: 'HTML', ...getRegistrationMenu('currency') });
+            }
+            else if (user.step === 'currency' && text !== '⬅️ Back') {
+                user.currency = text;
+                user.step = 'language';
+                await user.save();
+                return bot.sendMessage(chatId, "🗣️ <b>Language Selection</b>\n\nPlease select your preferred language:", { parse_mode: 'HTML', ...getRegistrationMenu('language') });
+            }
+            else if (user.step === 'language' && text !== '⬅️ Back') {
+                user.language = text;
+                user.step = 'registered';
+                await user.save();
+                return bot.sendMessage(chatId, "✅ <b>Registration Complete!</b>\n\nYour profile has been successfully set up. Welcome to the Sure 2 Odds community!", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+            }
+            return; 
         }
 
         // Main Menu Interactivity
@@ -159,7 +179,6 @@ bot.on('message', async (msg) => {
         }
 
     } catch (error) {
-        // 🔥 CRASH CATCHER: If anything fails, print the exact reason to the Render Logs!
         console.error("❌ BOT CRASHED DURING MESSAGE HANDLING:", error.message);
     }
 });
