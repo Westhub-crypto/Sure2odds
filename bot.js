@@ -2,8 +2,9 @@ const TelegramBot = require('node-telegram-bot-api');
 const User = require('./models/User');
 const Payment = require('./models/Payment');
 const Code = require('./models/Code');
+const Setting = require('./models/Setting');
 const Subscription = require('./models/Subscription');
-const { getMainMenu, getRegistrationMenu, getAdminMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu, getSupportMenu } = require('./utils/keyboards');
+const { getMainMenu, getRegistrationMenu, getAdminMenu, getAdminCancelMenu, getDeleteCodeMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu, getSupportMenu } = require('./utils/keyboards');
 const { checkAdmin } = require('./middlewares/adminMiddleware');
 const { handleAdminPanel, handleStats } = require('./controllers/adminController');
 const { processManualReceipt, handleAdminPaymentAction } = require('./controllers/paymentController');
@@ -29,18 +30,23 @@ bot.on('message', async (msg) => {
         const chatId = msg.chat.id.toString();
         const text = msg.text || '';
         
-        console.log(`📩 Message received from ${chatId}`);
-        
         const isAdmin = checkAdmin(chatId);
         let user = await User.findOne({ telegramId: chatId });
 
-        // 🔥 GLOBAL CANCEL: Instantly catches "Cancel" from ANY menu and brings them home
-        if (text === '⬅️ Return to Main Menu' || text === '❌ Cancel') {
+        // 🔥 GLOBAL CANCEL & RETURN
+        if (text === '⬅️ Return to Main Menu' || text === '⬅️ Back to Main Menu' || text === '❌ Cancel') {
             if (user) {
                 user.step = 'registered';
                 await user.save();
-                return bot.sendMessage(chatId, "🏡 <b>Returned to Main Menu</b>\n\nHow can we assist you today?", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+                return bot.sendMessage(chatId, "🏡 <b>Returned to Main Menu</b>", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
             }
+        }
+        
+        // Return to Admin Menu
+        if (text === '⬅️ Back to Admin Menu' && isAdmin) {
+            user.step = 'registered';
+            await user.save();
+            return handleAdminPanel(bot, chatId);
         }
 
         if (text === '/start') {
@@ -59,43 +65,113 @@ bot.on('message', async (msg) => {
 
         if (!user) return;
 
-        // 🔥 ADMIN SUPPORT REPLY LOGIC: Routes admin's message back to the user
+        // Admin Support Reply
         if (isAdmin && user.step && user.step.startsWith('replying_to_')) {
             const targetUserId = user.step.replace('replying_to_', '');
-            const adminResponsePrefix = `💬 <b>Message from Admin:</b>\n\n`;
             const contentText = msg.text || msg.caption || '';
-            
             try {
                 if (msg.photo) {
-                     await bot.sendPhoto(targetUserId, msg.photo[msg.photo.length - 1].file_id, {
-                         caption: adminResponsePrefix + contentText,
-                         parse_mode: 'HTML'
-                     });
+                     await bot.sendPhoto(targetUserId, msg.photo[msg.photo.length - 1].file_id, { caption: `💬 <b>Message from Admin:</b>\n\n${contentText}`, parse_mode: 'HTML' });
                 } else {
-                     await bot.sendMessage(targetUserId, adminResponsePrefix + contentText, { parse_mode: 'HTML' });
+                     await bot.sendMessage(targetUserId, `💬 <b>Message from Admin:</b>\n\n${contentText}`, { parse_mode: 'HTML' });
                 }
                 bot.sendMessage(chatId, "✅ <b>Reply sent successfully to user!</b>", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
             } catch (e) {
-                bot.sendMessage(chatId, "⚠️ <b>Failed to send message. The user might have blocked the bot.</b>", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+                bot.sendMessage(chatId, "⚠️ <b>Failed to send message.</b>", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
             }
-            
-            user.step = 'registered';
-            await user.save();
-            return;
+            user.step = 'registered'; await user.save(); return;
         }
 
-        // Admin Commands
+        // ==========================================
+        // 👑 ADMIN DASHBOARD ROUTING
+        // ==========================================
         if (isAdmin && user.step === 'registered') {
             if (text === 'ADMIN') return handleAdminPanel(bot, chatId);
             if (text === '📊 Statistics') return handleStats(bot, chatId, User, Subscription);
+            
+            if (text === '➕ Add Basic Code') {
+                user.step = 'admin_add_basic'; await user.save();
+                return bot.sendMessage(chatId, "✍️ <b>Add Basic Code</b>\n\nPlease type the booking code you want to add:", { parse_mode: 'HTML', ...getAdminCancelMenu() });
+            }
+            if (text === '➕ Add VIP Code') {
+                user.step = 'admin_add_vip'; await user.save();
+                return bot.sendMessage(chatId, "✍️ <b>Add VIP Code</b>\n\nPlease type the VIP booking code:", { parse_mode: 'HTML', ...getAdminCancelMenu() });
+            }
+            if (text === '📢 Broadcast') {
+                user.step = 'admin_broadcast'; await user.save();
+                return bot.sendMessage(chatId, "📢 <b>Broadcast Message</b>\n\nType the message you want to send to ALL users (You can also upload a photo with a caption):", { parse_mode: 'HTML', ...getAdminCancelMenu() });
+            }
+            if (text === '⚙️ Change VIP Price') {
+                user.step = 'admin_change_price'; await user.save();
+                return bot.sendMessage(chatId, "⚙️ <b>Change VIP Price</b>\n\nEnter the new price in NGN (numbers only):", { parse_mode: 'HTML', ...getAdminCancelMenu() });
+            }
+            if (text === '🗑️ Delete Codes') {
+                user.step = 'admin_delete_selection'; await user.save();
+                return bot.sendMessage(chatId, "🗑️ <b>Delete Codes</b>\n\nWhich codes would you like to wipe from the system?", { parse_mode: 'HTML', ...getDeleteCodeMenu() });
+            }
         }
 
+        // 👑 ADMIN DASHBOARD ACTIONS (Execution)
+        if (isAdmin) {
+            if (user.step === 'admin_add_basic') {
+                const code = new Code({ type: 'basic', content: text }); await code.save();
+                user.step = 'registered'; await user.save();
+                // Send alert to basic users
+                const basicUsers = await User.find({ role: 'basic', step: 'registered' });
+                basicUsers.forEach(u => bot.sendMessage(u.telegramId, `📢 <b>New Basic Code Available!</b>\n\nCheck the menu now.`, { parse_mode: 'HTML' }).catch(()=>{}));
+                return bot.sendMessage(chatId, `✅ <b>Basic Code Saved Successfully!</b>\n<code>${text}</code>`, { parse_mode: 'HTML', ...getAdminMenu() });
+            }
+            if (user.step === 'admin_add_vip') {
+                const code = new Code({ type: 'vip', content: text }); await code.save();
+                user.step = 'registered'; await user.save();
+                // Send alert to VIP users
+                const vipUsers = await User.find({ role: 'vip' });
+                vipUsers.forEach(u => bot.sendMessage(u.telegramId, `💎 <b>New VIP Code Dropped!</b>\n\nCheck the VIP section now.`, { parse_mode: 'HTML' }).catch(()=>{}));
+                return bot.sendMessage(chatId, `✅ <b>VIP Code Saved Successfully!</b>\n<code>${text}</code>`, { parse_mode: 'HTML', ...getAdminMenu() });
+            }
+            if (user.step === 'admin_delete_selection') {
+                if (text === '🗑️ Delete Basic Codes') {
+                    await Code.deleteMany({ type: 'basic' });
+                    bot.sendMessage(chatId, "✅ <b>All Basic Codes have been deleted.</b>", { parse_mode: 'HTML', ...getAdminMenu() });
+                } else if (text === '🗑️ Delete VIP Codes') {
+                    await Code.deleteMany({ type: 'vip' });
+                    bot.sendMessage(chatId, "✅ <b>All VIP Codes have been deleted.</b>", { parse_mode: 'HTML', ...getAdminMenu() });
+                }
+                user.step = 'registered'; await user.save();
+                return;
+            }
+            if (user.step === 'admin_change_price') {
+                await Setting.findOneAndUpdate({ key: 'vip_price_ngn' }, { value: text }, { upsert: true });
+                user.step = 'registered'; await user.save();
+                return bot.sendMessage(chatId, `✅ <b>VIP Price changed to ${text} NGN</b>`, { parse_mode: 'HTML', ...getAdminMenu() });
+            }
+            if (user.step === 'admin_broadcast') {
+                const allUsers = await User.find({ step: 'registered' });
+                bot.sendMessage(chatId, `🚀 Sending broadcast to ${allUsers.length} users...`);
+                let count = 0;
+                for (let u of allUsers) {
+                    try {
+                        if (msg.photo) {
+                            await bot.sendPhoto(u.telegramId, msg.photo[msg.photo.length - 1].file_id, { caption: msg.caption, parse_mode: 'HTML' });
+                        } else {
+                            await bot.sendMessage(u.telegramId, `📢 <b>Admin Broadcast:</b>\n\n${text}`, { parse_mode: 'HTML' });
+                        }
+                        count++;
+                    } catch (e) {} // Ignores users who blocked the bot
+                }
+                user.step = 'registered'; await user.save();
+                return bot.sendMessage(chatId, `✅ <b>Broadcast successfully delivered to ${count} users!</b>`, { parse_mode: 'HTML', ...getAdminMenu() });
+            }
+        }
+
+        // ==========================================
+        // USER REGISTRATION FLOW
+        // ==========================================
         const validCountries = ['🇳🇬 Nigeria', '🇬🇭 Ghana', '🇨🇮 Ivory Coast', '🇸🇳 Senegal', '🇨🇲 Cameroon', '🇧🇯 Benin'];
         const validCurrencies = ['USD', 'NGN', 'EUR', 'GHS'];
         const validLanguages = ['English', 'French'];
 
-        // Registration Flow
-        if (user.step !== 'registered' && user.step !== 'awaiting_receipt' && user.step !== 'support' && user.step !== 'vip_payment_selection' && user.step !== 'awaiting_auto_verify') {
+        if (user.step !== 'registered' && user.step !== 'awaiting_receipt' && user.step !== 'support' && user.step !== 'vip_payment_selection' && user.step !== 'awaiting_auto_verify' && !user.step.startsWith('admin_')) {
             
             if (text === '⬅️ Back') {
                 if (user.step === 'country') { 
@@ -134,7 +210,9 @@ bot.on('message', async (msg) => {
             return; 
         }
 
-        // Main Menu Interactivity
+        // ==========================================
+        // MAIN MENU INTERACTIVITY
+        // ==========================================
         if (user.step === 'registered') {
             
             if (text === 'FREE BOOKING CODE') {
@@ -150,7 +228,12 @@ bot.on('message', async (msg) => {
                 if (user.role !== 'vip' && user.role !== 'admin') {
                     user.step = 'vip_payment_selection';
                     await user.save();
-                    const upgradeMsg = `💎 <b>Exclusive VIP Access Required</b> 💎\n\nUnlock premium, high-odds selections backed by our experts' rigorous analysis. Elevate your winning consistency today!\n\n💵 <b>Subscription Plan:</b> 5000 NGN / 30 Days\n\n<i>Please select your preferred payment method from the menu below to proceed:</i>`;
+                    
+                    // Fetch dynamic price if admin changed it, otherwise default 5000
+                    const priceSetting = await Setting.findOne({ key: 'vip_price_ngn' });
+                    const currentPrice = priceSetting ? priceSetting.value : 5000;
+                    
+                    const upgradeMsg = `💎 <b>Exclusive VIP Access Required</b> 💎\n\nUnlock premium, high-odds selections backed by our experts' rigorous analysis. Elevate your winning consistency today!\n\n💵 <b>Subscription Plan:</b> ${currentPrice} NGN / 30 Days\n\n<i>Please select your preferred payment method from the menu below to proceed:</i>`;
                     return bot.sendMessage(chatId, upgradeMsg, { parse_mode: 'HTML', ...getVIPPaymentMenu() });
                 } else {
                     const code = await Code.findOne({ type: 'vip', isActive: true }).sort({ date: -1 });
@@ -190,127 +273,29 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // --- VIP PAYMENT ROUTING ---
+        // ==========================================
+        // VIP PAYMENT ROUTING
+        // ==========================================
         if (user.step === 'vip_payment_selection') {
+            const priceSetting = await Setting.findOne({ key: 'vip_price_ngn' });
+            const currentPrice = priceSetting ? priceSetting.value : 5000;
+
             if (text === '🏦 Manual Bank Transfer') {
-                user.step = 'awaiting_receipt';
-                await user.save();
-                const bankMsg = `🏦 <b>Manual Bank Transfer Details</b> 🏦\n\nPlease proceed to transfer exactly <b>5000 NGN</b> to the account below:\n\n🏛 <b>Bank:</b> MoMo PSB\n🔢 <b>Account No:</b> <code>7049625916</code>\n👤 <b>Name:</b> Godwin Owoicho Oloja\n\n📸 <b>Action Required:</b> Once your transfer is successful, kindly upload the payment screenshot/receipt right here for rapid verification.`;
+                user.step = 'awaiting_receipt'; await user.save();
+                const bankMsg = `🏦 <b>Manual Bank Transfer Details</b> 🏦\n\nPlease proceed to transfer exactly <b>${currentPrice} NGN</b> to the account below:\n\n🏛 <b>Bank:</b> MoMo PSB\n🔢 <b>Account No:</b> <code>7049625916</code>\n👤 <b>Name:</b> Godwin Owoicho Oloja\n\n📸 <b>Action Required:</b> Once your transfer is successful, kindly upload the payment screenshot/receipt right here for rapid verification.`;
                 return bot.sendMessage(chatId, bankMsg, { parse_mode: 'HTML', ...getManualPaymentMenu() });
             }
             
             if (text === '💳 Automatic Payment') {
                 bot.sendMessage(chatId, "🔄 <b>Generating your secure payment link...</b>", { parse_mode: 'HTML' });
-                const paymentData = await initializePayment('user@sure2odds.com', 5000);
+                const paymentData = await initializePayment('user@sure2odds.com', currentPrice);
                 
                 if (paymentData) {
-                    const payment = new Payment({
-                        telegramId: chatId, amount: 5000, method: 'squadco', reference: paymentData.reference
-                    });
+                    const payment = new Payment({ telegramId: chatId, amount: currentPrice, method: 'squadco', reference: paymentData.reference });
                     await payment.save();
 
-                    user.step = 'awaiting_auto_verify';
-                    await user.save();
-
+                    user.step = 'awaiting_auto_verify'; await user.save();
                     const autoMsg = `🌐 <b>Secure Online Payment</b> 🌐\n\nClick the secure link below to complete your VIP payment via Squadco:\n\n🔗 ${paymentData.checkoutUrl}\n\n<i>Once you have completed the payment on the website, return to this chat and press the <b>"🔄 Verify Payment"</b> button below.</i>`;
                     return bot.sendMessage(chatId, autoMsg, { parse_mode: 'HTML', ...getAutoPaymentMenu() });
                 } else {
-                    return bot.sendMessage(chatId, "❌ <b>Failed to generate payment link.</b>\n\nPlease try again later or use the Manual Bank Transfer method.", { parse_mode: 'HTML' });
-                }
-            }
-        }
-
-        if (user.step === 'awaiting_auto_verify' && text === '🔄 Verify Payment') {
-            bot.sendMessage(chatId, "🔄 <b>Checking transaction status with Squadco... Please wait.</b>", { parse_mode: 'HTML' });
-            
-            const payment = await Payment.findOne({ telegramId: chatId, method: 'squadco', status: 'pending' }).sort({ createdAt: -1 });
-
-            if (!payment) {
-                return bot.sendMessage(chatId, "⚠️ No pending payment found. Please generate a new link or contact support.", { parse_mode: 'HTML' });
-            }
-
-            const isSuccessful = await verifyPayment(payment.reference);
-
-            if (isSuccessful) {
-                payment.status = 'approved';
-                await payment.save();
-
-                user.role = 'vip';
-                user.step = 'registered';
-                await user.save();
-
-                await Subscription.findOneAndUpdate(
-                    { telegramId: chatId },
-                    { userId: user._id, status: 'active', startDate: new Date(), expiryDate: calculateExpiryDate(30) },
-                    { upsert: true }
-                );
-
-                return bot.sendMessage(chatId, "🎉 <b>Payment Successful!</b> 🎉\n\nSquadco has confirmed your payment. You are now a 💎 <b>VIP Member</b> for 30 days! Welcome to the elite tier.", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
-            } else {
-                return bot.sendMessage(chatId, "⚠️ <b>Payment Not Confirmed Yet</b>\n\nWe couldn't verify your payment with Squadco at this moment. If you have already been debited, please wait a few minutes and try clicking 'Verify' again, or select 'Cancel' to return.", { parse_mode: 'HTML' });
-            }
-        }
-
-        // --- DATA SUBMISSIONS (Receipts & Support) ---
-        if (user.step === 'awaiting_receipt') {
-            if (msg.photo) {
-                await processManualReceipt(bot, chatId, ADMIN_ID, msg.photo[msg.photo.length - 1].file_id);
-            } else {
-                bot.sendMessage(chatId, "⚠️ <b>Action Required:</b> Please upload a photo of your receipt.", { parse_mode: 'HTML' });
-            }
-            return;
-        }
-
-        if (user.step === 'support') {
-            await handleSupportMessage(bot, msg, ADMIN_ID);
-            user.step = 'registered';
-            await user.save();
-            return bot.sendMessage(chatId, "✅ <b>Message Sent!</b>\n\nOur administrative team will review your inquiry and get back to you shortly. Returning to Main Menu.", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
-        }
-
-    } catch (error) {
-        console.error("❌ BOT CRASHED DURING MESSAGE HANDLING:", error.message);
-    }
-});
-
-// Admin Inline Button Handlers
-bot.on('callback_query', async (query) => {
-    try {
-        const chatId = query.message.chat.id.toString();
-        const data = query.data;
-        const msgId = query.message.message_id;
-
-        if (chatId === ADMIN_ID) {
-            // Payment Approvals
-            if (data.startsWith('approve_') || data.startsWith('reject_')) {
-                const action = data.startsWith('approve_') ? 'approve' : 'reject';
-                const paymentId = data.replace(`${action}_`, '');
-                const { handleAdminPaymentAction } = require('./controllers/paymentController');
-                await handleAdminPaymentAction(bot, paymentId, action, chatId);
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId });
-            }
-            
-            // 🔥 NEW: Support Reply Trigger
-            if (data.startsWith('support_reply_')) {
-                const targetUserId = data.replace('support_reply_', '');
-                const adminUser = await User.findOne({ telegramId: chatId });
-                
-                adminUser.step = `replying_to_${targetUserId}`;
-                await adminUser.save();
-                
-                bot.sendMessage(chatId, `✍️ <b>Replying to Ticket</b>\n\nPlease type your message for ID <code>${targetUserId}</code> now.\n\n<i>You can send text or an image.</i>`, { 
-                    parse_mode: 'HTML', 
-                    reply_markup: {
-                        keyboard: [[{ text: '❌ Cancel' }, { text: '⬅️ Return to Main Menu' }]],
-                        resize_keyboard: true
-                    }
-                });
-            }
-        }
-        bot.answerCallbackQuery(query.id);
-    } catch (error) {
-        console.error("❌ CALLBACK ERROR:", error.message);
-    }
-});
-
-module.exports = bot;
+                    return bot.sendMessage(chatId, "❌ <b>Failed to generate payment link.</b>\n\nPlease try again later or u
