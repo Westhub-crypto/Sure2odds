@@ -11,4 +11,6 @@ const userSchema = new mongoose.Schema({
     isBanned: { type: Boolean, default: false }
 }, { timestamps: true });
 
-module.exports = mongoose.model('User', userSchema);
+// We added 'sure2odds_users' at the end here!
+// This forces MongoDB to create a brand new, clean collection ignoring old project rules.
+module.exports = mongoose.model('User', userSchema, 'sure2odds_users');
