@@ -25,7 +25,8 @@ bot.on('message', async (msg) => {
         user.step = 'name';
         await user.save();
 
-        const welcome = `👋 Welcome to Sure 2 Odds\n\nYour trusted platform for daily winning booking codes.\n\n🚀 Complete your registration.\nPlease enter your *Full Name*:`;
+        const welcome = `🌟 **Welcome to Sure 2 Odds** 🌟\n\nYour premier destination for expertly analyzed, high-accuracy booking codes.\n\nWhether you are looking to build consistency with our reliable **Free Daily Codes**, or maximize your profits with our exclusive **Premium VIP Selections**, you are in exactly the right place.\n\nTo ensure you get the best experience, let's set up your profile.\n\n📝 **Account Registration**\nPlease type and send your *Full Name* below to begin:`;
+        
         return bot.sendMessage(chatId, welcome, { parse_mode: 'Markdown', ...getRegistrationMenu('start') });
     }
 
