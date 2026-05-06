@@ -1,21 +1,20 @@
 const axios = require('axios');
 const { generateReference } = require('../utils/helpers');
 
-// 🔥 FORCE the Live API URL to completely bypass any NODE_ENV variable mistakes
-const SQUADCO_API_URL = 'https://api-v2.squadco.com';
+// 🔥 CORRECTED SQUADCO URLS
+// If you are using a test key (sandbox_sk_), change this to: 'https://sandbox-api-d.squadco.com'
+const SQUADCO_API_URL = 'https://api-d.squadco.com';
 
 const initializePayment = async (email, amountNGN) => {
     const reference = generateReference();
     try {
         console.log(`📡 Sending payment request to Squadco for ${amountNGN} NGN...`);
         
-        // Ensure the Secret Key exists
         if (!process.env.SQUADCO_SECRET_KEY) {
             console.error("🚨 CRITICAL ERROR: SQUADCO_SECRET_KEY is missing from Render Environment Variables!");
             return null;
         }
 
-        // Force a valid webhook URL even if the environment variable was forgotten
         const webhookUrl = process.env.WEBHOOK_URL 
             ? `${process.env.WEBHOOK_URL}/webhook/squadco` 
             : 'https://sure2odds.onrender.com/webhook/squadco';
@@ -37,7 +36,6 @@ const initializePayment = async (email, amountNGN) => {
         return { checkoutUrl: response.data.data.checkout_url, reference: reference };
         
     } catch (error) {
-        // 🔥 MASSIVE ERROR TRACKER: Prints the exact reason Squadco rejected the request
         console.error("❌ SQUADCO API REJECTED THE REQUEST!");
         if (error.response) {
             console.error("👉 Reason from Squadco:", JSON.stringify(error.response.data, null, 2));
