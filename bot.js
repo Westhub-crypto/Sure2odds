@@ -29,7 +29,7 @@ bot.on('message', async (msg) => {
         const chatId = msg.chat.id.toString();
         const text = msg.text || '';
         
-        console.log(`📩 Message received from ${chatId}: ${text}`);
+        console.log(`📩 Message received from ${chatId}`);
         
         const isAdmin = checkAdmin(chatId);
         let user = await User.findOne({ telegramId: chatId });
@@ -44,7 +44,6 @@ bot.on('message', async (msg) => {
         }
 
         if (text === '/start') {
-            // 🔥 START FIX: If user is fully registered, welcome them back! Do not restart.
             if (user && user.step === 'registered') {
                 const welcomeBack = `🌟 <b>Welcome back to Sure 2 Odds, ${user.fullName}!</b> 🌟\n\nUse the menu below to access your premium codes and profile.`;
                 return bot.sendMessage(chatId, welcomeBack, { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
@@ -60,13 +59,37 @@ bot.on('message', async (msg) => {
 
         if (!user) return;
 
+        // 🔥 ADMIN SUPPORT REPLY LOGIC: Routes admin's message back to the user
+        if (isAdmin && user.step && user.step.startsWith('replying_to_')) {
+            const targetUserId = user.step.replace('replying_to_', '');
+            const adminResponsePrefix = `💬 <b>Message from Admin:</b>\n\n`;
+            const contentText = msg.text || msg.caption || '';
+            
+            try {
+                if (msg.photo) {
+                     await bot.sendPhoto(targetUserId, msg.photo[msg.photo.length - 1].file_id, {
+                         caption: adminResponsePrefix + contentText,
+                         parse_mode: 'HTML'
+                     });
+                } else {
+                     await bot.sendMessage(targetUserId, adminResponsePrefix + contentText, { parse_mode: 'HTML' });
+                }
+                bot.sendMessage(chatId, "✅ <b>Reply sent successfully to user!</b>", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+            } catch (e) {
+                bot.sendMessage(chatId, "⚠️ <b>Failed to send message. The user might have blocked the bot.</b>", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+            }
+            
+            user.step = 'registered';
+            await user.save();
+            return;
+        }
+
         // Admin Commands
         if (isAdmin && user.step === 'registered') {
             if (text === 'ADMIN') return handleAdminPanel(bot, chatId);
             if (text === '📊 Statistics') return handleStats(bot, chatId, User, Subscription);
         }
 
-        // 🔥 STRICT VALIDATION LISTS
         const validCountries = ['🇳🇬 Nigeria', '🇬🇭 Ghana', '🇨🇮 Ivory Coast', '🇸🇳 Senegal', '🇨🇲 Cameroon', '🇧🇯 Benin'];
         const validCurrencies = ['USD', 'NGN', 'EUR', 'GHS'];
         const validLanguages = ['English', 'French'];
@@ -89,38 +112,23 @@ bot.on('message', async (msg) => {
                 }
             }
 
-            // 🔥 ANTI-RACE CONDITION LOGIC
-            if (user.step === 'name') {
-                user.fullName = text; 
-                user.step = 'country'; 
-                await user.save();
+            if (user.step === 'name' && text !== '/start') {
+                user.fullName = text; user.step = 'country'; await user.save();
                 return bot.sendMessage(chatId, "🌍 <b>Country Selection</b>\n\nPlease select your country from the West African regions below:", { parse_mode: 'HTML', ...getRegistrationMenu('country') });
             }
             else if (user.step === 'country') {
-                if (!validCountries.includes(text)) {
-                    return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid country.", { parse_mode: 'HTML', ...getRegistrationMenu('country') });
-                }
-                user.country = text; 
-                user.step = 'currency'; 
-                await user.save();
+                if (!validCountries.includes(text)) return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid country.", { parse_mode: 'HTML', ...getRegistrationMenu('country') });
+                user.country = text; user.step = 'currency'; await user.save();
                 return bot.sendMessage(chatId, "💵 <b>Currency Selection</b>\n\nPlease select your preferred currency for transactions:", { parse_mode: 'HTML', ...getRegistrationMenu('currency') });
             }
             else if (user.step === 'currency') {
-                if (!validCurrencies.includes(text)) {
-                    return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid currency.", { parse_mode: 'HTML', ...getRegistrationMenu('currency') });
-                }
-                user.currency = text; 
-                user.step = 'language'; 
-                await user.save();
+                if (!validCurrencies.includes(text)) return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid currency.", { parse_mode: 'HTML', ...getRegistrationMenu('currency') });
+                user.currency = text; user.step = 'language'; await user.save();
                 return bot.sendMessage(chatId, "🗣️ <b>Language Selection</b>\n\nPlease select your preferred language:", { parse_mode: 'HTML', ...getRegistrationMenu('language') });
             }
             else if (user.step === 'language') {
-                if (!validLanguages.includes(text)) {
-                    return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid language.", { parse_mode: 'HTML', ...getRegistrationMenu('language') });
-                }
-                user.language = text; 
-                user.step = 'registered'; 
-                await user.save();
+                if (!validLanguages.includes(text)) return bot.sendMessage(chatId, "⚠️ <b>Invalid Selection</b>\n\nPlease use the buttons below to select a valid language.", { parse_mode: 'HTML', ...getRegistrationMenu('language') });
+                user.language = text; user.step = 'registered'; await user.save();
                 return bot.sendMessage(chatId, "✅ <b>Registration Complete!</b>\n\nYour profile has been successfully set up. Welcome to the Sure 2 Odds community!", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
             }
             return; 
@@ -175,7 +183,7 @@ bot.on('message', async (msg) => {
             }
 
             if (text === 'SUPPORT') {
-                bot.sendMessage(chatId, "📩 <b>Customer Support</b>\n\nPlease type your message and send it. Our administrative team will review your inquiry and get back to you shortly.", { parse_mode: 'HTML', ...getSupportMenu() });
+                bot.sendMessage(chatId, "📩 <b>Customer Support</b>\n\nPlease type your message and send it (You can also upload images). Our administrative team will review your inquiry and get back to you shortly.", { parse_mode: 'HTML', ...getSupportMenu() });
                 user.step = 'support';
                 await user.save();
                 return;
@@ -243,17 +251,21 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // Support Submissions
+        // --- DATA SUBMISSIONS (Receipts & Support) ---
+        if (user.step === 'awaiting_receipt') {
+            if (msg.photo) {
+                await processManualReceipt(bot, chatId, ADMIN_ID, msg.photo[msg.photo.length - 1].file_id);
+            } else {
+                bot.sendMessage(chatId, "⚠️ <b>Action Required:</b> Please upload a photo of your receipt.", { parse_mode: 'HTML' });
+            }
+            return;
+        }
+
         if (user.step === 'support') {
-            await handleSupportMessage(bot, chatId, ADMIN_ID, text, msg.message_id);
+            await handleSupportMessage(bot, msg, ADMIN_ID);
             user.step = 'registered';
             await user.save();
             return bot.sendMessage(chatId, "✅ <b>Message Sent!</b>\n\nOur administrative team will review your inquiry and get back to you shortly. Returning to Main Menu.", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
-        }
-
-        // Receipt Submissions
-        if (user.step === 'awaiting_receipt' && msg.photo) {
-            await processManualReceipt(bot, chatId, ADMIN_ID, msg.photo[msg.photo.length - 1].file_id);
         }
 
     } catch (error) {
@@ -269,12 +281,30 @@ bot.on('callback_query', async (query) => {
         const msgId = query.message.message_id;
 
         if (chatId === ADMIN_ID) {
+            // Payment Approvals
             if (data.startsWith('approve_') || data.startsWith('reject_')) {
                 const action = data.startsWith('approve_') ? 'approve' : 'reject';
                 const paymentId = data.replace(`${action}_`, '');
                 const { handleAdminPaymentAction } = require('./controllers/paymentController');
                 await handleAdminPaymentAction(bot, paymentId, action, chatId);
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId });
+            }
+            
+            // 🔥 NEW: Support Reply Trigger
+            if (data.startsWith('support_reply_')) {
+                const targetUserId = data.replace('support_reply_', '');
+                const adminUser = await User.findOne({ telegramId: chatId });
+                
+                adminUser.step = `replying_to_${targetUserId}`;
+                await adminUser.save();
+                
+                bot.sendMessage(chatId, `✍️ <b>Replying to Ticket</b>\n\nPlease type your message for ID <code>${targetUserId}</code> now.\n\n<i>You can send text or an image.</i>`, { 
+                    parse_mode: 'HTML', 
+                    reply_markup: {
+                        keyboard: [[{ text: '❌ Cancel' }, { text: '⬅️ Return to Main Menu' }]],
+                        resize_keyboard: true
+                    }
+                });
             }
         }
         bot.answerCallbackQuery(query.id);
