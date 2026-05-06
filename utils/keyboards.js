@@ -44,7 +44,6 @@ const getRegistrationMenu = (step) => {
     return { reply_markup: { keyboard, resize_keyboard: true, one_time_keyboard: true } };
 };
 
-// 🔥 NEW VIP PAYMENT MENUS
 const getVIPPaymentMenu = () => {
     return {
         reply_markup: {
@@ -80,4 +79,16 @@ const getAutoPaymentMenu = () => {
     };
 };
 
-module.exports = { getMainMenu, getAdminMenu, getRegistrationMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu };
+// 🔥 NEW: Support Menu with Cancel Option
+const getSupportMenu = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                [{ text: '❌ Cancel' }, { text: '⬅️ Return to Main Menu' }]
+            ],
+            resize_keyboard: true
+        }
+    };
+};
+
+module.exports = { getMainMenu, getAdminMenu, getRegistrationMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu, getSupportMenu };
