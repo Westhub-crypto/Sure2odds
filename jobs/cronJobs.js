@@ -1,11 +1,25 @@
 const cron = require('node-cron');
 const Subscription = require('../models/Subscription');
 const User = require('../models/User');
+const Code = require('../models/Code');
 const { sendMessageSafe } = require('../services/notificationService');
 const { getDailyPromoMessage } = require('../services/marketingService');
 
 const startCronJobs = (bot) => {
-    // 1. VIP Expiry Check (Daily at Midnight)
+    // 1. AUTOMATIC CODE RESET (Every Midnight - Nigerian Time)
+    cron.schedule('0 0 * * *', async () => {
+        try {
+            await Code.deleteMany({}); // Wipes all codes from the database
+            console.log("🧹 MIDNIGHT RESET: All booking codes have been deleted successfully.");
+        } catch (error) {
+            console.error("❌ MIDNIGHT RESET ERROR:", error.message);
+        }
+    }, {
+        scheduled: true,
+        timezone: "Africa/Lagos" // Ensures it runs at exactly 12 AM your local time
+    });
+
+    // 2. VIP Expiry Check (Daily at Midnight)
     cron.schedule('0 0 * * *', async () => {
         const activeSubs = await Subscription.find({ status: 'active' });
         const now = new Date();
@@ -26,7 +40,7 @@ const startCronJobs = (bot) => {
         }
     });
 
-    // 2. Marketing Broadcast (Daily at 10 AM)
+    // 3. Marketing Broadcast (Daily at 10 AM)
     cron.schedule('0 10 * * *', async () => {
         const basics = await User.find({ role: 'basic', step: 'registered' });
         const promoMsg = getDailyPromoMessage();
