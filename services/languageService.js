@@ -1,10 +1,4 @@
-const texts = {
-  en: {
-    welcome: "👋 Welcome to Sure 2 Odds",
-    expired: "Your VIP subscription has expired."
-  }
+const getGreeting = (language) => {
+    return language === 'French' ? 'Bienvenue!' : 'Welcome!';
 };
-
-exports.t = (lang, key) => {
-  return texts[lang]?.[key] || texts.en[key];
-};
+module.exports = { getGreeting };
