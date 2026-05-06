@@ -13,8 +13,32 @@ const getAdminMenu = () => {
         reply_markup: {
             keyboard: [
                 [{ text: '➕ Add Basic Code' }, { text: '➕ Add VIP Code' }],
-                [{ text: '📢 Broadcast' }, { text: '⚙️ Change VIP Price' }],
-                [{ text: '📊 Statistics' }, { text: '⬅️ Back to Main Menu' }]
+                [{ text: '🗑️ Delete Codes' }, { text: '📢 Broadcast' }],
+                [{ text: '⚙️ Change VIP Price' }, { text: '📊 Statistics' }],
+                [{ text: '⬅️ Back to Main Menu' }]
+            ],
+            resize_keyboard: true
+        }
+    };
+};
+
+const getAdminCancelMenu = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                [{ text: '❌ Cancel' }, { text: '⬅️ Back to Admin Menu' }]
+            ],
+            resize_keyboard: true
+        }
+    };
+};
+
+const getDeleteCodeMenu = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                [{ text: '🗑️ Delete Basic Codes' }, { text: '🗑️ Delete VIP Codes' }],
+                [{ text: '❌ Cancel' }, { text: '⬅️ Back to Admin Menu' }]
             ],
             resize_keyboard: true
         }
@@ -23,11 +47,7 @@ const getAdminMenu = () => {
 
 const getRegistrationMenu = (step) => {
     let keyboard = [];
-    
-    if (step === 'start' || step === 'name') {
-        return { reply_markup: { remove_keyboard: true } };
-    }
-
+    if (step === 'start' || step === 'name') return { reply_markup: { remove_keyboard: true } };
     if (step === 'country') {
         keyboard = [
             [{ text: '🇳🇬 Nigeria' }, { text: '🇬🇭 Ghana' }],
@@ -35,12 +55,10 @@ const getRegistrationMenu = (step) => {
             [{ text: '🇨🇲 Cameroon' }, { text: '🇧🇯 Benin' }]
         ];
     }
-    
     if (step === 'currency') keyboard = [[{ text: 'USD' }, { text: 'NGN' }, { text: 'EUR' }, { text: 'GHS' }]];
     if (step === 'language') keyboard = [[{ text: 'English' }, { text: 'French' }]];
     
     keyboard.push([{ text: '⬅️ Back' }]);
-    
     return { reply_markup: { keyboard, resize_keyboard: true, one_time_keyboard: true } };
 };
 
@@ -79,16 +97,17 @@ const getAutoPaymentMenu = () => {
     };
 };
 
-// 🔥 NEW: Support Menu with Cancel Option
 const getSupportMenu = () => {
     return {
         reply_markup: {
-            keyboard: [
-                [{ text: '❌ Cancel' }, { text: '⬅️ Return to Main Menu' }]
-            ],
+            keyboard: [[{ text: '❌ Cancel' }, { text: '⬅️ Return to Main Menu' }]],
             resize_keyboard: true
         }
     };
 };
 
-module.exports = { getMainMenu, getAdminMenu, getRegistrationMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu, getSupportMenu };
+module.exports = { 
+    getMainMenu, getAdminMenu, getAdminCancelMenu, getDeleteCodeMenu, 
+    getRegistrationMenu, getVIPPaymentMenu, getManualPaymentMenu, 
+    getAutoPaymentMenu, getSupportMenu 
+};
