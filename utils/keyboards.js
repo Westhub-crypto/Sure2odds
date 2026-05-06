@@ -29,7 +29,6 @@ const getRegistrationMenu = (step) => {
     }
 
     if (step === 'country') {
-        // Professional grid of West African MoMo Countries
         keyboard = [
             [{ text: '🇳🇬 Nigeria' }, { text: '🇬🇭 Ghana' }],
             [{ text: '🇨🇮 Ivory Coast' }, { text: '🇸🇳 Senegal' }],
@@ -45,4 +44,40 @@ const getRegistrationMenu = (step) => {
     return { reply_markup: { keyboard, resize_keyboard: true, one_time_keyboard: true } };
 };
 
-module.exports = { getMainMenu, getAdminMenu, getRegistrationMenu };
+// 🔥 NEW VIP PAYMENT MENUS
+const getVIPPaymentMenu = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                [{ text: '💳 Automatic Payment' }, { text: '🏦 Manual Bank Transfer' }],
+                [{ text: '⬅️ Return to Main Menu' }]
+            ],
+            resize_keyboard: true
+        }
+    };
+};
+
+const getManualPaymentMenu = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                [{ text: '❌ Cancel' }, { text: '⬅️ Return to Main Menu' }]
+            ],
+            resize_keyboard: true
+        }
+    };
+};
+
+const getAutoPaymentMenu = () => {
+    return {
+        reply_markup: {
+            keyboard: [
+                [{ text: '🔄 Verify Payment' }],
+                [{ text: '❌ Cancel' }, { text: '⬅️ Return to Main Menu' }]
+            ],
+            resize_keyboard: true
+        }
+    };
+};
+
+module.exports = { getMainMenu, getAdminMenu, getRegistrationMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu };
