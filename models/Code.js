@@ -1,10 +1,10 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
-const schema = new mongoose.Schema({
-  type: { type: String, enum: ["basic", "vip"] },
-  content: String,
-  image: String,
-  createdAt: { type: Date, default: Date.now }
-});
+const codeSchema = new mongoose.Schema({
+    type: { type: String, enum: ['basic', 'vip'], required: true },
+    content: { type: String, required: true },
+    imageId: String,
+    isActive: { type: Boolean, default: true }
+}, { timestamps: true });
 
-module.exports = mongoose.model("Code", schema);
+module.exports = mongoose.model('Code', codeSchema);
