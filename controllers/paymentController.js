@@ -23,12 +23,12 @@ const processManualReceipt = async (bot, chatId, adminId, photoId) => {
     };
 
     await bot.sendPhoto(adminId, photoId, {
-        caption: `📄 **New Manual Payment Receipt**\n\n👤 **User:** ${user.fullName}\n🆔 **ID:** \`${chatId}\`\n💰 **Amount:** 5000 NGN\n\nPlease review the receipt and take action.`,
-        parse_mode: 'Markdown',
+        caption: `📄 <b>New Manual Payment Receipt</b>\n\n👤 <b>User:</b> ${user.fullName}\n🆔 <b>ID:</b> <code>${chatId}</code>\n💰 <b>Amount:</b> 5000 NGN\n\nPlease review the receipt and take action.`,
+        parse_mode: 'HTML',
         ...adminKeyboard
     });
     
-    await bot.sendMessage(chatId, "✅ Receipt submitted successfully! Admin is reviewing it now. You will be notified shortly.");
+    await bot.sendMessage(chatId, "✅ Receipt submitted successfully! Admin is reviewing it now. You will be notified shortly.", { parse_mode: 'HTML' });
     user.step = 'registered';
     await user.save();
 };
@@ -36,7 +36,7 @@ const processManualReceipt = async (bot, chatId, adminId, photoId) => {
 const handleAdminPaymentAction = async (bot, paymentId, action, adminChatId) => {
     const payment = await Payment.findById(paymentId);
     if (!payment || payment.status !== 'pending') {
-        return bot.sendMessage(adminChatId, "⚠️ This payment has already been processed.");
+        return bot.sendMessage(adminChatId, "⚠️ This payment has already been processed.", { parse_mode: 'HTML' });
     }
 
     const user = await User.findOne({ telegramId: payment.telegramId });
@@ -51,13 +51,13 @@ const handleAdminPaymentAction = async (bot, paymentId, action, adminChatId) => 
             { upsert: true, new: true }
         );
         
-        await bot.sendMessage(user.telegramId, "🎉 **Payment Verified!**\n\nYour manual payment has been approved. You are now a 💎 **VIP Member** for 30 days! Enjoy your premium codes.");
-        await bot.sendMessage(adminChatId, `✅ You approved ${user.fullName}'s payment.`);
+        await bot.sendMessage(user.telegramId, "🎉 <b>Payment Verified!</b>\n\nYour manual payment has been approved. You are now a 💎 <b>VIP Member</b> for 30 days! Enjoy your premium codes.", { parse_mode: 'HTML' });
+        await bot.sendMessage(adminChatId, `✅ You approved ${user.fullName}'s payment.`, { parse_mode: 'HTML' });
         
     } else if (action === 'reject') {
         payment.status = 'rejected';
-        await bot.sendMessage(user.telegramId, "❌ **Payment Rejected**\n\nYour recent payment receipt was reviewed and rejected. If you believe this is an error, please click 'SUPPORT' to contact us.");
-        await bot.sendMessage(adminChatId, `❌ You rejected ${user.fullName}'s payment.`);
+        await bot.sendMessage(user.telegramId, "❌ <b>Payment Rejected</b>\n\nYour recent payment receipt was reviewed and rejected. If you believe this is an error, please click 'SUPPORT' to contact us.", { parse_mode: 'HTML' });
+        await bot.sendMessage(adminChatId, `❌ You rejected ${user.fullName}'s payment.`, { parse_mode: 'HTML' });
     }
     
     await payment.save();
@@ -65,11 +65,11 @@ const handleAdminPaymentAction = async (bot, paymentId, action, adminChatId) => 
 };
 
 const handleSquadcoVerification = async (bot, chatId, reference, paymentId) => {
-    bot.sendMessage(chatId, "🔄 Checking transaction status with Squadco... Please wait.");
+    bot.sendMessage(chatId, "🔄 Checking transaction status with Squadco... Please wait.", { parse_mode: 'HTML' });
     
     const payment = await Payment.findById(paymentId);
     if (payment && payment.status === 'approved') {
-        return bot.sendMessage(chatId, "✅ Your payment was already verified. You are already a VIP!");
+        return bot.sendMessage(chatId, "✅ Your payment was already verified. You are already a VIP!", { parse_mode: 'HTML' });
     }
 
     const isSuccessful = await verifyPayment(reference);
@@ -90,9 +90,9 @@ const handleSquadcoVerification = async (bot, chatId, reference, paymentId) => {
             { upsert: true }
         );
 
-        bot.sendMessage(chatId, "🎉 **Payment Successful!**\n\nSquadco has confirmed your payment. You are now a 💎 **VIP Member** for 30 days!");
+        bot.sendMessage(chatId, "🎉 <b>Payment Successful!</b>\n\nSquadco has confirmed your payment. You are now a 💎 <b>VIP Member</b> for 30 days!", { parse_mode: 'HTML' });
     } else {
-        bot.sendMessage(chatId, "⚠️ **Payment Not Confirmed Yet**\n\nWe couldn't verify your payment with Squadco at this moment. If you have already been debited, please wait a few minutes and try clicking 'Verify' again, or contact support.");
+        bot.sendMessage(chatId, "⚠️ <b>Payment Not Confirmed Yet</b>\n\nWe couldn't verify your payment with Squadco at this moment. If you have already been debited, please wait a few minutes and try clicking 'Verify' again, or contact support.", { parse_mode: 'HTML' });
     }
 };
 
