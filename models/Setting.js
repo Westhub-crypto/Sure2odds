@@ -1,7 +1,8 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
-const schema = new mongoose.Schema({
-  vipPriceNGN: { type: Number, default: 5000 }
+const settingSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    value: mongoose.Schema.Types.Mixed
 });
 
-module.exports = mongoose.model("Setting", schema);
+module.exports = mongoose.model('Setting', settingSchema);
