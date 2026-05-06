@@ -3,12 +3,13 @@ const User = require('./models/User');
 const Payment = require('./models/Payment');
 const Code = require('./models/Code');
 const Subscription = require('./models/Subscription');
-const { getMainMenu, getRegistrationMenu, getAdminMenu } = require('./utils/keyboards');
+const { getMainMenu, getRegistrationMenu, getAdminMenu, getVIPPaymentMenu, getManualPaymentMenu, getAutoPaymentMenu } = require('./utils/keyboards');
 const { checkAdmin } = require('./middlewares/adminMiddleware');
 const { handleAdminPanel, handleStats } = require('./controllers/adminController');
-const { processManualReceipt, handleAdminPaymentAction, handleSquadcoVerification } = require('./controllers/paymentController');
+const { processManualReceipt, handleAdminPaymentAction } = require('./controllers/paymentController');
 const { handleSupportMessage } = require('./controllers/supportController');
-const { initializePayment } = require('./services/squadService');
+const { initializePayment, verifyPayment } = require('./services/squadService');
+const { calculateExpiryDate } = require('./utils/helpers');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const ADMIN_ID = process.env.ADMIN_ID;
@@ -33,21 +34,26 @@ bot.on('message', async (msg) => {
         const isAdmin = checkAdmin(chatId);
         let user = await User.findOne({ telegramId: chatId });
 
+        // Global Cancel & Return Logic
+        if (text === '⬅️ Return to Main Menu' || text === '❌ Cancel') {
+            if (user) {
+                user.step = 'registered';
+                await user.save();
+                return bot.sendMessage(chatId, "🏡 <b>Returned to Main Menu</b>\n\nHow can we assist you today?", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+            }
+        }
+
         if (text === '/start') {
-            // Fix 1: If user is already registered, welcome them back! Do not reset them.
             if (user && user.step === 'registered') {
                 const welcomeBack = `🌟 <b>Welcome back to Sure 2 Odds, ${user.fullName}!</b> 🌟\n\nUse the menu below to access your premium codes and profile.`;
                 return bot.sendMessage(chatId, welcomeBack, { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
             }
 
-            if (!user) {
-                user = new User({ telegramId: chatId });
-            }
+            if (!user) user = new User({ telegramId: chatId });
             user.step = 'name';
             await user.save();
 
             const welcome = `🌟 <b>Welcome to Sure 2 Odds</b> 🌟\n\nYour premier destination for expertly analyzed, high-accuracy booking codes.\n\nWhether you are looking to build consistency with our reliable <b>Free Daily Codes</b>, or maximize your profits with our exclusive <b>Premium VIP Selections</b>, you are in exactly the right place.\n\nTo ensure you get the best experience, let's set up your profile.\n\n📝 <b>Account Registration</b>\nPlease type and send your <b>Full Name</b> below to begin:`;
-            
             return await bot.sendMessage(chatId, welcome, { parse_mode: 'HTML', ...getRegistrationMenu('start') });
         }
 
@@ -57,11 +63,10 @@ bot.on('message', async (msg) => {
         if (isAdmin && user.step === 'registered') {
             if (text === 'ADMIN') return handleAdminPanel(bot, chatId);
             if (text === '📊 Statistics') return handleStats(bot, chatId, User, Subscription);
-            if (text === '⬅️ Back to Main Menu') return bot.sendMessage(chatId, "Main Menu", getMainMenu(isAdmin));
         }
 
-        // Fix 2: Professional Registration Flow Guides
-        if (user.step !== 'registered' && user.step !== 'awaiting_receipt' && user.step !== 'support') {
+        // Registration Flow
+        if (user.step !== 'registered' && user.step !== 'awaiting_receipt' && user.step !== 'support' && user.step !== 'vip_payment_selection' && user.step !== 'awaiting_auto_verify') {
             
             if (text === '⬅️ Back') {
                 if (user.step === 'country') { 
@@ -79,27 +84,19 @@ bot.on('message', async (msg) => {
             }
 
             if (user.step === 'name' && text !== '/start') {
-                user.fullName = text;
-                user.step = 'country';
-                await user.save();
+                user.fullName = text; user.step = 'country'; await user.save();
                 return bot.sendMessage(chatId, "🌍 <b>Country Selection</b>\n\nPlease select your country from the West African regions below:", { parse_mode: 'HTML', ...getRegistrationMenu('country') });
             }
             else if (user.step === 'country' && text !== '⬅️ Back') {
-                user.country = text;
-                user.step = 'currency';
-                await user.save();
+                user.country = text; user.step = 'currency'; await user.save();
                 return bot.sendMessage(chatId, "💵 <b>Currency Selection</b>\n\nPlease select your preferred currency for transactions:", { parse_mode: 'HTML', ...getRegistrationMenu('currency') });
             }
             else if (user.step === 'currency' && text !== '⬅️ Back') {
-                user.currency = text;
-                user.step = 'language';
-                await user.save();
+                user.currency = text; user.step = 'language'; await user.save();
                 return bot.sendMessage(chatId, "🗣️ <b>Language Selection</b>\n\nPlease select your preferred language:", { parse_mode: 'HTML', ...getRegistrationMenu('language') });
             }
             else if (user.step === 'language' && text !== '⬅️ Back') {
-                user.language = text;
-                user.step = 'registered';
-                await user.save();
+                user.language = text; user.step = 'registered'; await user.save();
                 return bot.sendMessage(chatId, "✅ <b>Registration Complete!</b>\n\nYour profile has been successfully set up. Welcome to the Sure 2 Odds community!", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
             }
             return; 
@@ -119,16 +116,10 @@ bot.on('message', async (msg) => {
 
             if (text === 'VIP CODE') {
                 if (user.role !== 'vip' && user.role !== 'admin') {
-                    const upgradeMsg = `💎 <b>Exclusive VIP Access Required</b>\n\nOur VIP codes offer premium, high-odds selections with a consistent winning record.\nYou are currently on the Basic plan.\n\n<b>Price:</b> 5000 NGN / 30 Days\n\nPlease select your preferred payment method below to upgrade and unlock today's codes:`;
-                    return bot.sendMessage(chatId, upgradeMsg, {
-                        parse_mode: 'HTML',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: '💳 Automatic Payment (Squadco)', callback_data: 'select_auto' }],
-                                [{ text: '🏦 Manual Bank Transfer', callback_data: 'select_manual' }]
-                            ]
-                        }
-                    });
+                    user.step = 'vip_payment_selection';
+                    await user.save();
+                    const upgradeMsg = `💎 <b>Exclusive VIP Access Required</b> 💎\n\nUnlock premium, high-odds selections backed by our experts' rigorous analysis. Elevate your winning consistency today!\n\n💵 <b>Subscription Plan:</b> 5000 NGN / 30 Days\n\n<i>Please select your preferred payment method from the menu below to proceed:</i>`;
+                    return bot.sendMessage(chatId, upgradeMsg, { parse_mode: 'HTML', ...getVIPPaymentMenu() });
                 } else {
                     const code = await Code.findOne({ type: 'vip', isActive: true }).sort({ date: -1 });
                     if (code) {
@@ -154,9 +145,7 @@ bot.on('message', async (msg) => {
 
                 if (user.role === 'vip') {
                     const sub = await Subscription.findOne({ telegramId: chatId, status: 'active' });
-                    if (sub) {
-                        profileMsg += `<b>VIP Expiry:</b> ${sub.expiryDate.toDateString()}\n`;
-                    }
+                    if (sub) profileMsg += `<b>VIP Expiry:</b> ${sub.expiryDate.toDateString()}\n`;
                 }
                 return bot.sendMessage(chatId, profileMsg, { parse_mode: 'HTML' });
             }
@@ -169,6 +158,68 @@ bot.on('message', async (msg) => {
             }
         }
 
+        // --- VIP PAYMENT ROUTING ---
+        if (user.step === 'vip_payment_selection') {
+            if (text === '🏦 Manual Bank Transfer') {
+                user.step = 'awaiting_receipt';
+                await user.save();
+                const bankMsg = `🏦 <b>Manual Bank Transfer Details</b> 🏦\n\nPlease proceed to transfer exactly <b>5000 NGN</b> to the account below:\n\n🏛 <b>Bank:</b> MoMo PSB\n🔢 <b>Account No:</b> <code>7049625916</code>\n👤 <b>Name:</b> Godwin Owoicho Oloja\n\n📸 <b>Action Required:</b> Once your transfer is successful, kindly upload the payment screenshot/receipt right here for rapid verification.`;
+                return bot.sendMessage(chatId, bankMsg, { parse_mode: 'HTML', ...getManualPaymentMenu() });
+            }
+            
+            if (text === '💳 Automatic Payment') {
+                bot.sendMessage(chatId, "🔄 <b>Generating your secure payment link...</b>", { parse_mode: 'HTML' });
+                const paymentData = await initializePayment('user@sure2odds.com', 5000);
+                
+                if (paymentData) {
+                    const payment = new Payment({
+                        telegramId: chatId, amount: 5000, method: 'squadco', reference: paymentData.reference
+                    });
+                    await payment.save();
+
+                    user.step = 'awaiting_auto_verify';
+                    await user.save();
+
+                    const autoMsg = `🌐 <b>Secure Online Payment</b> 🌐\n\nClick the secure link below to complete your VIP payment via Squadco:\n\n🔗 ${paymentData.checkoutUrl}\n\n<i>Once you have completed the payment on the website, return to this chat and press the <b>"🔄 Verify Payment"</b> button below.</i>`;
+                    return bot.sendMessage(chatId, autoMsg, { parse_mode: 'HTML', ...getAutoPaymentMenu() });
+                } else {
+                    return bot.sendMessage(chatId, "❌ <b>Failed to generate payment link.</b>\n\nPlease try again later or use the Manual Bank Transfer method.", { parse_mode: 'HTML' });
+                }
+            }
+        }
+
+        // --- AUTO PAYMENT VERIFICATION ---
+        if (user.step === 'awaiting_auto_verify' && text === '🔄 Verify Payment') {
+            bot.sendMessage(chatId, "🔄 <b>Checking transaction status with Squadco... Please wait.</b>", { parse_mode: 'HTML' });
+            
+            const payment = await Payment.findOne({ telegramId: chatId, method: 'squadco', status: 'pending' }).sort({ createdAt: -1 });
+
+            if (!payment) {
+                return bot.sendMessage(chatId, "⚠️ No pending payment found. Please generate a new link or contact support.", { parse_mode: 'HTML' });
+            }
+
+            const isSuccessful = await verifyPayment(payment.reference);
+
+            if (isSuccessful) {
+                payment.status = 'approved';
+                await payment.save();
+
+                user.role = 'vip';
+                user.step = 'registered';
+                await user.save();
+
+                await Subscription.findOneAndUpdate(
+                    { telegramId: chatId },
+                    { userId: user._id, status: 'active', startDate: new Date(), expiryDate: calculateExpiryDate(30) },
+                    { upsert: true }
+                );
+
+                return bot.sendMessage(chatId, "🎉 <b>Payment Successful!</b> 🎉\n\nSquadco has confirmed your payment. You are now a 💎 <b>VIP Member</b> for 30 days! Welcome to the elite tier.", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
+            } else {
+                return bot.sendMessage(chatId, "⚠️ <b>Payment Not Confirmed Yet</b>\n\nWe couldn't verify your payment with Squadco at this moment. If you have already been debited, please wait a few minutes and try clicking 'Verify' again, or select 'Cancel' to return.", { parse_mode: 'HTML' });
+            }
+        }
+
         // Awaiting Data Handlers
         if (user.step === 'awaiting_receipt' && msg.photo) {
             await processManualReceipt(bot, chatId, ADMIN_ID, msg.photo[msg.photo.length - 1].file_id);
@@ -176,6 +227,7 @@ bot.on('message', async (msg) => {
             await handleSupportMessage(bot, chatId, ADMIN_ID, text, msg.message_id);
             user.step = 'registered';
             await user.save();
+            return bot.sendMessage(chatId, "Returning to Main Menu.", { parse_mode: 'HTML', ...getMainMenu(isAdmin) });
         }
 
     } catch (error) {
@@ -183,50 +235,12 @@ bot.on('message', async (msg) => {
     }
 });
 
+// Admin Inline Button Handlers (Only admins use inline buttons for fast approvals)
 bot.on('callback_query', async (query) => {
     try {
         const chatId = query.message.chat.id.toString();
         const data = query.data;
         const msgId = query.message.message_id;
-
-        if (data === 'select_manual') {
-            const user = await User.findOne({ telegramId: chatId });
-            user.step = 'awaiting_receipt';
-            await user.save();
-            
-            const bankMsg = `🏦 <b>Manual Payment Details</b>\n\nPlease transfer exactly <b>5000 NGN</b> to:\n\n🏦 <b>Bank:</b> MoMo PSB\n🔢 <b>Account:</b> <code>7049625916</code>\n👤 <b>Name:</b> Godwin Owoicho Oloja\n\n📸 <b>IMPORTANT:</b> After paying, upload a screenshot of your payment receipt here.`;
-            bot.sendMessage(chatId, bankMsg, { parse_mode: 'HTML' });
-        }
-
-        if (data === 'select_auto') {
-            bot.sendMessage(chatId, "🔄 Generating your secure payment link...");
-            const paymentData = await initializePayment('user@sure2odds.com', 5000);
-            
-            if (paymentData) {
-                const payment = new Payment({
-                    telegramId: chatId, amount: 5000, method: 'squadco', reference: paymentData.reference
-                });
-                await payment.save();
-
-                bot.sendMessage(chatId, `💳 <b>Secure Squadco Payment</b>\n\nClick the button below to pay securely. Once completed, return here and click <b>"🔄 Verify Payment"</b>.`, {
-                    parse_mode: 'HTML',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '💳 Pay Now', url: paymentData.checkoutUrl }],
-                            [{ text: '🔄 Verify Payment', callback_data: `verify_sq_${payment._id}` }]
-                        ]
-                    }
-                });
-            } else {
-                bot.sendMessage(chatId, "❌ Failed to generate payment link. Please try again later or use Manual Transfer.");
-            }
-        }
-
-        if (data.startsWith('verify_sq_')) {
-            const paymentId = data.replace('verify_sq_', '');
-            const payment = await Payment.findById(paymentId);
-            if (payment) await handleSquadcoVerification(bot, chatId, payment.reference, paymentId);
-        }
 
         if (chatId === ADMIN_ID) {
             if (data.startsWith('approve_') || data.startsWith('reject_')) {
@@ -236,7 +250,6 @@ bot.on('callback_query', async (query) => {
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msgId });
             }
         }
-        
         bot.answerCallbackQuery(query.id);
     } catch (error) {
         console.error("❌ CALLBACK ERROR:", error.message);
