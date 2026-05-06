@@ -1,31 +1,14 @@
-const Code = require("../models/Code");
-const User = require("../models/User");
-const Subscription = require("../models/Subscription");
-const { notify } = require("../services/notificationService");
+const Code = require('../models/Code');
+const { getAdminMenu } = require('../utils/keyboards');
 
-exports.addCode = async (type, text, image) => {
-  const c = await Code.create({ type, content: text, image });
-  await notify(c);
+const handleAdminPanel = async (bot, chatId) => {
+    await bot.sendMessage(chatId, "👑 **Admin Dashboard**\nWelcome boss. What would you like to do?", Object.assign({ parse_mode: 'Markdown' }, getAdminMenu()));
 };
 
-exports.approveManual = async (payment, bot) => {
-  const user = await User.findById(payment.userId);
-  user.isVIP = true;
-  await user.save();
-
-  const now = new Date();
-  const expiry = new Date(now.getTime() + 30 * 86400000);
-
-  await Subscription.create({
-    userId: user._id,
-    startDate: now,
-    expiryDate: expiry
-  });
-
-  bot.sendMessage(user.telegramId, "✅ VIP Activated");
+const handleStats = async (bot, chatId, User, Subscription) => {
+    const totalUsers = await User.countDocuments();
+    const vips = await Subscription.countDocuments({ status: 'active' });
+    await bot.sendMessage(chatId, `📊 **Platform Statistics**\n\nTotal Users: ${totalUsers}\nActive VIPs: ${vips}`, { parse_mode: 'Markdown' });
 };
 
-exports.rejectManual = async (payment, bot) => {
-  const user = await User.findById(payment.userId);
-  bot.sendMessage(user.telegramId, "❌ Payment rejected");
-};
+module.exports = { handleAdminPanel, handleStats };
