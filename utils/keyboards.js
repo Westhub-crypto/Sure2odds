@@ -1,6 +1,7 @@
 const getMainMenu = (isAdmin) => {
     const keyboard = [
         [{ text: 'FREE BOOKING CODE' }, { text: 'VIP CODE' }],
+        [{ text: 'ROLLOVER' }], // 🔥 New Rollover Button
         [{ text: 'PROFILE' }, { text: 'SUPPORT' }]
     ];
     if (isAdmin) keyboard.push([{ text: 'ADMIN' }]);
@@ -13,9 +14,9 @@ const getAdminMenu = () => {
         reply_markup: {
             keyboard: [
                 [{ text: '➕ Add Basic Code' }, { text: '➕ Add VIP Code' }],
-                [{ text: '🗑️ Delete Codes' }, { text: '📢 Broadcast' }],
-                [{ text: '⚙️ Change VIP Price' }, { text: '📊 Statistics' }],
-                [{ text: '⬅️ Back to Main Menu' }]
+                [{ text: '➕ Add Rollover Code' }, { text: '🗑️ Delete Codes' }], // 🔥 Added Rollover Admin Button
+                [{ text: '📢 Broadcast' }, { text: '⚙️ Change VIP Price' }],
+                [{ text: '📊 Statistics' }, { text: '⬅️ Back to Main Menu' }]
             ],
             resize_keyboard: true
         }
@@ -38,6 +39,7 @@ const getDeleteCodeMenu = () => {
         reply_markup: {
             keyboard: [
                 [{ text: '🗑️ Delete Basic Codes' }, { text: '🗑️ Delete VIP Codes' }],
+                [{ text: '🗑️ Delete Rollover Codes' }], // 🔥 Added Delete Rollover Button
                 [{ text: '❌ Cancel' }, { text: '⬅️ Back to Admin Menu' }]
             ],
             resize_keyboard: true
