@@ -1,10 +1,10 @@
 const getMainMenu = (isAdmin) => {
     const keyboard = [
-        [{ text: 'FREE BOOKING CODE' }, { text: 'VIP CODE' }],
-        [{ text: 'ROLLOVER' }], // 🔥 New Rollover Button
-        [{ text: 'PROFILE' }, { text: 'SUPPORT' }]
+        [{ text: '🎁 FREE BOOKING CODE' }, { text: '💎 VIP CODE' }],
+        [{ text: '🔥 ROLLOVER' }],
+        [{ text: '👤 PROFILE' }, { text: '📩 SUPPORT' }]
     ];
-    if (isAdmin) keyboard.push([{ text: 'ADMIN' }]);
+    if (isAdmin) keyboard.push([{ text: '👑 ADMIN' }]);
     
     return { reply_markup: { keyboard, resize_keyboard: true, is_persistent: true } };
 };
@@ -14,7 +14,7 @@ const getAdminMenu = () => {
         reply_markup: {
             keyboard: [
                 [{ text: '➕ Add Basic Code' }, { text: '➕ Add VIP Code' }],
-                [{ text: '➕ Add Rollover Code' }, { text: '🗑️ Delete Codes' }], // 🔥 Added Rollover Admin Button
+                [{ text: '➕ Add Rollover Code' }, { text: '🗑️ Delete Codes' }],
                 [{ text: '📢 Broadcast' }, { text: '⚙️ Change VIP Price' }],
                 [{ text: '📊 Statistics' }, { text: '⬅️ Back to Main Menu' }]
             ],
@@ -39,7 +39,7 @@ const getDeleteCodeMenu = () => {
         reply_markup: {
             keyboard: [
                 [{ text: '🗑️ Delete Basic Codes' }, { text: '🗑️ Delete VIP Codes' }],
-                [{ text: '🗑️ Delete Rollover Codes' }], // 🔥 Added Delete Rollover Button
+                [{ text: '🗑️ Delete Rollover Codes' }],
                 [{ text: '❌ Cancel' }, { text: '⬅️ Back to Admin Menu' }]
             ],
             resize_keyboard: true
@@ -57,8 +57,8 @@ const getRegistrationMenu = (step) => {
             [{ text: '🇨🇲 Cameroon' }, { text: '🇧🇯 Benin' }]
         ];
     }
-    if (step === 'currency') keyboard = [[{ text: 'USD' }, { text: 'NGN' }, { text: 'EUR' }, { text: 'GHS' }]];
-    if (step === 'language') keyboard = [[{ text: 'English' }, { text: 'French' }]];
+    if (step === 'currency') keyboard = [[{ text: '💵 USD' }, { text: '🇳🇬 NGN' }, { text: '💶 EUR' }, { text: '🇬🇭 GHS' }]];
+    if (step === 'language') keyboard = [[{ text: '🇬🇧 English' }, { text: '🇫🇷 French' }]];
     
     keyboard.push([{ text: '⬅️ Back' }]);
     return { reply_markup: { keyboard, resize_keyboard: true, one_time_keyboard: true } };
